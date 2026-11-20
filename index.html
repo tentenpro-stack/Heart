@@ -32,26 +32,59 @@ function screen(id){["intro","quiz","result"].forEach(x=>$(x).classList.toggle("
 function drawQ(){let q=qs[n];$("counter").textContent=`QUESTION ${n+1} / 10`;$("pct").textContent=`${(n+1)*10}%`;$("fill").style.width=`${(n+1)*10}%`;$("qnum").textContent=`QUESTION ${String(n+1).padStart(2,"0")}`;$("question").textContent=q[0];$("choices").replaceChildren();q[1].forEach((v,i)=>{let b=document.createElement("button");b.className="choice";let s=document.createElement("span");s.className="letter";s.textContent="ABCD"[i];b.append(s,document.createTextNode(v));b.onclick=()=>{ans.push(i);n++;n<10?drawQ():finish()};$("choices").append(b)})}
 function finish(){let counts=[0,0,0,0,0,0];ans.forEach((v,i)=>counts[(v*2+i*3)%6]++);current=types[counts.indexOf(Math.max(...counts))];$("symbol").textContent=current.icon;$("symbol").style.color=current.color;$("resultArt").src=artImages[current.art];$("title").textContent=current.name;$("sub").textContent=current.sub;$("desc").textContent=current.desc;$("strength").textContent=current.strength;$("message").textContent=current.message;screen("result")}
 
-let audioCtx=null, musicOn=false, masterGain=null, musicNodes=[];
+let audioCtx=null, musicOn=false, masterGain=null, musicTimer=null, musicStep=0, activeMusicNodes=[];
+const calmChords=[
+ [130.81,164.81,196.00,246.94], // Cmaj7
+ [110.00,164.81,196.00,220.00], // Am7
+ [87.31,130.81,174.61,220.00],  // Fmaj7
+ [98.00,146.83,196.00,220.00]  // Gsus2
+];
+function softTone(freq,when,duration,volume,type="sine"){
+ const osc=audioCtx.createOscillator(),gain=audioCtx.createGain(),filter=audioCtx.createBiquadFilter();
+ osc.type=type;osc.frequency.setValueAtTime(freq,when);
+ filter.type="lowpass";filter.frequency.setValueAtTime(type==="sine"?900:1250,when);
+ gain.gain.setValueAtTime(0.0001,when);
+ gain.gain.linearRampToValueAtTime(volume,when+Math.min(1.8,duration*.35));
+ gain.gain.setTargetAtTime(0.0001,when+duration*.65,.9);
+ osc.connect(filter);filter.connect(gain);gain.connect(masterGain);
+ osc.start(when);osc.stop(when+duration+3);
+ activeMusicNodes.push(osc);
+}
+function playCalmPhrase(){
+ if(!musicOn||!audioCtx)return;
+ const now=audioCtx.currentTime+.08, chord=calmChords[musicStep%calmChords.length];
+ // A slow, warm chord that gently changes every eight seconds.
+ chord.forEach((f,i)=>softTone(f,now,7.8,[.012,.009,.008,.005][i],"sine"));
+ // A few widely spaced, soft high notes create gentle movement without a busy beat.
+ const motifs=[
+  [523.25,659.25,587.33],
+  [493.88,587.33,659.25],
+  [440.00,523.25,659.25],
+  [392.00,493.88,587.33]
+ ];
+ const motif=motifs[musicStep%motifs.length];
+ motif.forEach((f,i)=>softTone(f,now+1.1+i*2.05,3.3,.009,"sine"));
+ musicStep++;
+}
 function startMusic(){
  if(musicOn)return;
  const AC=window.AudioContext||window.webkitAudioContext;
  if(!AC)return;
- audioCtx=audioCtx||new AC(); if(audioCtx.state==="suspended")audioCtx.resume();
- masterGain=audioCtx.createGain();masterGain.gain.value=0.0001;masterGain.connect(audioCtx.destination);
- const now=audioCtx.currentTime;masterGain.gain.setTargetAtTime(0.22,now,1.2);
- // Soft original ambient pad: slow, gentle layered tones; no external audio or tracking.
- [[174.61,0.22],[261.63,0.16],[349.23,0.11],[440.00,0.07]].forEach(([freq,vol],i)=>{
-   const osc=audioCtx.createOscillator(),gain=audioCtx.createGain(),filter=audioCtx.createBiquadFilter();
-   osc.type=i===0?"sine":"triangle";osc.frequency.value=freq;filter.type="lowpass";filter.frequency.value=850;
-   gain.gain.value=vol;osc.connect(filter);filter.connect(gain);gain.connect(masterGain);osc.start();musicNodes.push(osc);
- });
- musicOn=true; $("musicToggle").textContent="♫ BGM：ON";
+ audioCtx=audioCtx||new AC();
+ if(audioCtx.state==="suspended")audioCtx.resume();
+ masterGain=audioCtx.createGain();masterGain.gain.value=.0001;masterGain.connect(audioCtx.destination);
+ masterGain.gain.setTargetAtTime(.72,audioCtx.currentTime,2.4);
+ musicOn=true;musicStep=0;
+ playCalmPhrase();
+ musicTimer=setInterval(playCalmPhrase,8000);
+ $("musicToggle").textContent="♫ BGM：ON";
 }
 function stopMusic(){
  if(!audioCtx||!musicOn)return;
- masterGain.gain.setTargetAtTime(0.0001,audioCtx.currentTime,.25);
- musicOn=false;$("musicToggle").textContent="♫ BGM：OFF";
+ musicOn=false;
+ if(musicTimer){clearInterval(musicTimer);musicTimer=null;}
+ if(masterGain)masterGain.gain.setTargetAtTime(.0001,audioCtx.currentTime,.35);
+ $("musicToggle").textContent="♫ BGM：OFF";
 }
 $("musicToggle").addEventListener("click",()=>musicOn?stopMusic():startMusic());
 
